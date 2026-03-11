@@ -1,6 +1,6 @@
 use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
-use bevy::app::AppExit;
+use crate::game_state::GameScreen;
 use crate::ship::{PlayerShip, ShipDerivedStats, ShipMovementState};
 
 pub struct MovementControllerPlugin;
@@ -13,8 +13,8 @@ impl Plugin for MovementControllerPlugin {
                 ship_movement_system,
                 ship_rotation_system,
                 mouse_look_system,
-                exit_on_esc_system,
-            ),
+            )
+                .run_if(in_state(GameScreen::InGame)),
         );
     }
 }
@@ -190,11 +190,3 @@ fn approach_zero(value: f32, max_step: f32) -> f32 {
     }
 }
 
-fn exit_on_esc_system(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut exit_events: EventWriter<AppExit>,
-) {
-    if keyboard.just_pressed(KeyCode::Escape) {
-        exit_events.send(AppExit::Success);
-    }
-}

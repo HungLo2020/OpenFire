@@ -1,46 +1,233 @@
+mod camera_rig;
+mod game_state;
 mod movement_controller;
 mod ship;
-mod camera_rig;
 mod ship_config_store;
 
 use bevy::prelude::*;
+use bevy::app::AppExit;
 use bevy::transform::TransformSystem;
 use bevy::window::{CursorGrabMode, PrimaryWindow, WindowFocused};
 use camera_rig::{spawn_follow_camera, CameraRigPlugin};
+use game_state::GameScreen;
 use movement_controller::MovementControllerPlugin;
 use ship::{spawn_player_ship, PlayerShip, ShipDerivedStats, ShipStatsPlugin};
 use ship_config_store::{ShipConfigStore, ShipConfigStorePlugin};
 
+#[derive(Resource, Default)]
+struct WorldSpawned(bool);
+
+#[derive(Component)]
+struct MainMenuUi;
+
+#[derive(Component)]
+struct PauseMenuUi;
+
+#[derive(Component)]
+struct ProjectedCrosshair;
+
+#[derive(Component)]
+struct PlayButton;
+
+#[derive(Component)]
+struct ExitGameButton;
+
+#[derive(Component)]
+struct ResumeButton;
+
+#[derive(Component)]
+struct BackToMenuButton;
+
+#[derive(Component)]
+struct LaserProjectile {
+    velocity: Vec3,
+    lifetime: Timer,
+}
+
+#[derive(Resource)]
+struct LaserAssets {
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+}
+
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
+        .insert_resource(WorldSpawned::default())
         .add_plugins(DefaultPlugins)
+        .init_state::<GameScreen>()
         .add_plugins(ShipConfigStorePlugin)
         .add_plugins(ShipStatsPlugin)
         .add_plugins(MovementControllerPlugin)
         .add_plugins(CameraRigPlugin)
         .add_systems(Startup, setup)
-        .add_systems(Update, recapture_mouse_on_focus)
+        .add_systems(OnEnter(GameScreen::MainMenu), show_main_menu)
+        .add_systems(OnExit(GameScreen::MainMenu), hide_main_menu)
+        .add_systems(OnEnter(GameScreen::InGame), enter_in_game)
+        .add_systems(OnEnter(GameScreen::Paused), show_pause_menu)
+        .add_systems(OnExit(GameScreen::Paused), hide_pause_menu)
+        .add_systems(Update, main_menu_input.run_if(in_state(GameScreen::MainMenu)))
+        .add_systems(Update, main_menu_button_system.run_if(in_state(GameScreen::MainMenu)))
+        .add_systems(Update, toggle_pause_input.run_if(in_state(GameScreen::InGame)))
+        .add_systems(Update, fire_laser_system.run_if(in_state(GameScreen::InGame)))
+        .add_systems(Update, update_lasers_system.run_if(in_state(GameScreen::InGame)))
+        .add_systems(Update, unpause_input.run_if(in_state(GameScreen::Paused)))
+        .add_systems(Update, pause_menu_button_system.run_if(in_state(GameScreen::Paused)))
+        .add_systems(Update, recapture_mouse_on_focus.run_if(in_state(GameScreen::InGame)))
         .add_systems(
             PostUpdate,
-            update_projected_crosshair.after(TransformSystem::TransformPropagate),
+            update_projected_crosshair
+                .after(TransformSystem::TransformPropagate)
+                .run_if(in_state(GameScreen::InGame)),
         )
         .run();
 }
 
-    #[derive(Component)]
-    struct ProjectedCrosshair;
+fn setup(mut commands: Commands, mut primary_window: Query<&mut Window, With<PrimaryWindow>>) {
+    if let Ok(mut window) = primary_window.get_single_mut() {
+        window.cursor_options.visible = true;
+        window.cursor_options.grab_mode = CursorGrabMode::None;
+    }
 
-fn setup(
+    commands.spawn(Camera2d);
+}
+
+fn show_main_menu(mut commands: Commands) {
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(16.0),
+                ..default()
+            },
+            MainMenuUi,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("OPENFIRE"),
+                TextFont {
+                    font_size: 48.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
+
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(260.0),
+                        height: Val::Px(52.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.16, 0.16, 0.16)),
+                    PlayButton,
+                ))
+                .with_child((
+                    Text::new("Play"),
+                    TextFont {
+                        font_size: 24.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(260.0),
+                        height: Val::Px(52.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.16, 0.16, 0.16)),
+                    ExitGameButton,
+                ))
+                .with_child((
+                    Text::new("Exit Game"),
+                    TextFont {
+                        font_size: 24.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+        });
+}
+
+fn hide_main_menu(mut commands: Commands, menu_query: Query<Entity, With<MainMenuUi>>) {
+    for entity in &menu_query {
+        commands.entity(entity).despawn_recursive();
+    }
+}
+
+fn main_menu_input(keyboard: Res<ButtonInput<KeyCode>>, mut next_state: ResMut<NextState<GameScreen>>) {
+    if keyboard.just_pressed(KeyCode::Enter) {
+        next_state.set(GameScreen::InGame);
+    }
+}
+
+fn main_menu_button_system(
+    mut interaction_query: Query<
+        (&Interaction, Option<&PlayButton>, Option<&ExitGameButton>),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut next_state: ResMut<NextState<GameScreen>>,
+    mut exit_events: EventWriter<AppExit>,
+) {
+    for (interaction, play, exit) in &mut interaction_query {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        if play.is_some() {
+            next_state.set(GameScreen::InGame);
+        }
+        if exit.is_some() {
+            exit_events.send(AppExit::Success);
+        }
+    }
+}
+
+fn enter_in_game(
     mut commands: Commands,
+    mut world_spawned: ResMut<WorldSpawned>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    laser_assets: Option<Res<LaserAssets>>,
     ship_config_store: Res<ShipConfigStore>,
     mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
+    mut crosshair_query: Query<&mut Visibility, With<ProjectedCrosshair>>,
 ) {
     if let Ok(mut window) = primary_window.get_single_mut() {
         window.cursor_options.visible = false;
         window.cursor_options.grab_mode = CursorGrabMode::Locked;
+    }
+
+    for mut visibility in &mut crosshair_query {
+        *visibility = Visibility::Visible;
+    }
+
+    if laser_assets.is_none() {
+        let mesh = meshes.add(Mesh::from(Cylinder::new(0.03, 1.2)));
+        let material = materials.add(StandardMaterial {
+            base_color: Color::srgb(1.0, 0.0, 0.0),
+            emissive: LinearRgba::rgb(1.5, 0.0, 0.0),
+            unlit: true,
+            ..default()
+        });
+        commands.insert_resource(LaserAssets { mesh, material });
+    }
+
+    if world_spawned.0 {
+        return;
     }
 
     commands.spawn((
@@ -93,7 +280,132 @@ fn setup(
         },
         TextColor(Color::WHITE),
         ProjectedCrosshair,
+        Visibility::Visible,
     ));
+
+    world_spawned.0 = true;
+}
+
+fn toggle_pause_input(keyboard: Res<ButtonInput<KeyCode>>, mut next_state: ResMut<NextState<GameScreen>>) {
+    if keyboard.just_pressed(KeyCode::Escape) {
+        next_state.set(GameScreen::Paused);
+    }
+}
+
+fn unpause_input(keyboard: Res<ButtonInput<KeyCode>>, mut next_state: ResMut<NextState<GameScreen>>) {
+    if keyboard.just_pressed(KeyCode::Escape) {
+        next_state.set(GameScreen::InGame);
+    }
+}
+
+fn show_pause_menu(
+    mut commands: Commands,
+    mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
+    mut crosshair_query: Query<&mut Visibility, With<ProjectedCrosshair>>,
+) {
+    if let Ok(mut window) = primary_window.get_single_mut() {
+        window.cursor_options.visible = true;
+        window.cursor_options.grab_mode = CursorGrabMode::None;
+    }
+
+    for mut visibility in &mut crosshair_query {
+        *visibility = Visibility::Hidden;
+    }
+
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(14.0),
+                ..default()
+            },
+            PauseMenuUi,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("Paused"),
+                TextFont {
+                    font_size: 40.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
+
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(260.0),
+                        height: Val::Px(52.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.16, 0.16, 0.16)),
+                    ResumeButton,
+                ))
+                .with_child((
+                    Text::new("Resume"),
+                    TextFont {
+                        font_size: 24.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(260.0),
+                        height: Val::Px(52.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.16, 0.16, 0.16)),
+                    BackToMenuButton,
+                ))
+                .with_child((
+                    Text::new("Main Menu"),
+                    TextFont {
+                        font_size: 24.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+        });
+}
+
+fn hide_pause_menu(mut commands: Commands, pause_query: Query<Entity, With<PauseMenuUi>>) {
+    for entity in &pause_query {
+        commands.entity(entity).despawn_recursive();
+    }
+}
+
+fn pause_menu_button_system(
+    mut interaction_query: Query<
+        (&Interaction, Option<&ResumeButton>, Option<&BackToMenuButton>),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut next_state: ResMut<NextState<GameScreen>>,
+) {
+    for (interaction, resume, back_to_menu) in &mut interaction_query {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+
+        if resume.is_some() {
+            next_state.set(GameScreen::InGame);
+        }
+        if back_to_menu.is_some() {
+            next_state.set(GameScreen::MainMenu);
+        }
+    }
 }
 
 fn update_projected_crosshair(
@@ -185,6 +497,64 @@ fn recapture_mouse_on_focus(
         if let Ok(mut window) = primary_window.get_single_mut() {
             window.cursor_options.visible = false;
             window.cursor_options.grab_mode = CursorGrabMode::Locked;
+        }
+    }
+}
+
+fn fire_laser_system(
+    mut commands: Commands,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    ship_query: Query<(&Transform, &ShipDerivedStats), With<PlayerShip>>,
+    laser_assets: Option<Res<LaserAssets>>,
+) {
+    if !mouse_buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    let Some(laser_assets) = laser_assets else {
+        return;
+    };
+
+    let Ok((ship_transform, ship_stats)) = ship_query.get_single() else {
+        return;
+    };
+
+    let forward = ship_transform.rotation.mul_vec3(-Vec3::Z).normalize_or_zero();
+    if forward == Vec3::ZERO {
+        return;
+    }
+
+    let center_of_mass_world = ship_transform.translation
+        + ship_transform.rotation.mul_vec3(ship_stats.center_of_mass_local);
+    let spawn_position = center_of_mass_world + forward * 1.2;
+    let rotation = Quat::from_rotation_arc(Vec3::Y, forward);
+
+    commands.spawn((
+        Mesh3d(laser_assets.mesh.clone()),
+        MeshMaterial3d(laser_assets.material.clone()),
+        Transform {
+            translation: spawn_position,
+            rotation,
+            ..default()
+        },
+        LaserProjectile {
+            velocity: forward * 120.0,
+            lifetime: Timer::from_seconds(1.2, TimerMode::Once),
+        },
+    ));
+}
+
+fn update_lasers_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut laser_query: Query<(Entity, &mut Transform, &mut LaserProjectile)>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut transform, mut laser) in &mut laser_query {
+        transform.translation += laser.velocity * dt;
+        laser.lifetime.tick(time.delta());
+        if laser.lifetime.finished() {
+            commands.entity(entity).despawn();
         }
     }
 }

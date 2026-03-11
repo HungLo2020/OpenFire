@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+use crate::game_state::GameScreen;
 use crate::ship::{PlayerShip, ShipDerivedStats, ShipMovementState};
 
 const ALT_DOUBLE_TAP_WINDOW_SECS: f32 = 0.3;
@@ -8,7 +9,10 @@ pub struct CameraRigPlugin;
 
 impl Plugin for CameraRigPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (camera_orbit_input_system, camera_follow_system));
+        app.add_systems(
+            Update,
+            (camera_orbit_input_system, camera_follow_system).run_if(in_state(GameScreen::InGame)),
+        );
     }
 }
 
