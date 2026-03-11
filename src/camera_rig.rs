@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::ship::{PlayerShip, ShipMovementState, ShipStats};
+use crate::ship::{PlayerShip, ShipDerivedStats, ShipMovementState};
 
 const ALT_DOUBLE_TAP_WINDOW_SECS: f32 = 0.3;
 
@@ -90,7 +90,7 @@ fn camera_follow_system(
         (&FollowCamera, &mut FollowCameraState, &mut Transform),
         (With<Camera3d>, Without<PlayerShip>),
     >,
-    ship_query: Query<(&Transform, &ShipMovementState, &ShipStats), (With<PlayerShip>, Without<FollowCamera>)>,
+    ship_query: Query<(&Transform, &ShipMovementState, &ShipDerivedStats), (With<PlayerShip>, Without<FollowCamera>)>,
 ) {
     let dt = time.delta_secs();
     if dt <= 0.0 {

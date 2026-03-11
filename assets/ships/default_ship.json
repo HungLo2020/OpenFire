@@ -1,0 +1,14 @@
+{
+  "display_name": "Starter",
+  "center_of_mass_local": [0.0, 0.0, 0.0],
+  "max_speed": 100.0,
+  "acceleration_forward": 24.0,
+  "acceleration_backward": 20.0,
+  "acceleration_right": 20.0,
+  "acceleration_left": 20.0,
+  "acceleration_up": 20.0,
+  "acceleration_down": 20.0,
+  "roll_speed": 1.8,
+  "mouse_sensitivity": 0.006,
+  "initial_pitch": -0.22
+}

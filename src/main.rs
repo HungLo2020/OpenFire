@@ -1,17 +1,21 @@
 mod movement_controller;
 mod ship;
 mod camera_rig;
+mod ship_config_store;
 
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, PrimaryWindow, WindowFocused};
 use camera_rig::{spawn_follow_camera, CameraRigPlugin};
 use movement_controller::MovementControllerPlugin;
-use ship::{spawn_player_ship, PlayerShip, ShipStats, ShipType};
+use ship::{spawn_player_ship, PlayerShip, ShipDerivedStats, ShipStatsPlugin};
+use ship_config_store::{ShipConfigStore, ShipConfigStorePlugin};
 
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
         .add_plugins(DefaultPlugins)
+        .add_plugins(ShipConfigStorePlugin)
+        .add_plugins(ShipStatsPlugin)
         .add_plugins(MovementControllerPlugin)
         .add_plugins(CameraRigPlugin)
         .add_systems(Startup, setup)
@@ -26,6 +30,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    ship_config_store: Res<ShipConfigStore>,
     mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     if let Ok(mut window) = primary_window.get_single_mut() {
@@ -43,7 +48,7 @@ fn setup(
 
     spawn_starfield(&mut commands, &mut meshes, &mut materials);
 
-    let ship_entity = spawn_player_ship(&mut commands, &mut meshes, &mut materials, ShipType::Starter);
+    let ship_entity = spawn_player_ship(&mut commands, &mut meshes, &mut materials, &ship_config_store);
 
     let test_cube_mesh = meshes.add(Mesh::from(Cuboid::new(0.8, 0.8, 0.8)));
     let test_cube_materials = [
@@ -88,7 +93,7 @@ fn setup(
 
 fn update_projected_crosshair(
     window_query: Query<&Window, With<PrimaryWindow>>,
-    ship_query: Query<(&GlobalTransform, &ShipStats), With<PlayerShip>>,
+    ship_query: Query<(&GlobalTransform, &ShipDerivedStats), With<PlayerShip>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut crosshair_query: Query<&mut Node, With<ProjectedCrosshair>>,
 ) {

@@ -3249,6 +3249,8 @@ name = "openfire"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "serde",
+ "serde_json",
  "wgpu 24.0.5",
 ]
 

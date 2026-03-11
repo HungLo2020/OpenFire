@@ -2,21 +2,78 @@ use bevy::prelude::*;
 use bevy::render::mesh::Indices;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::PrimitiveTopology;
+use crate::ship_config_store::ShipConfigStore;
 
-#[derive(Component, Clone, Copy, Debug)]
+pub struct ShipStatsPlugin;
+
+impl Plugin for ShipStatsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Update, (ship_modifier_debug_input_system, recompute_derived_stats_system));
+    }
+}
+
+#[derive(Component, Clone, Debug)]
 #[allow(dead_code)]
-pub enum ShipType {
-    Starter,
-    Interceptor,
-    Hauler,
+pub struct ShipIdentity {
+    pub display_name: String,
 }
 
 #[derive(Component, Clone, Copy, Debug)]
-pub struct ShipStats {
+pub struct ShipBaseStats {
     pub center_of_mass_local: Vec3,
     pub max_speed: f32,
-    pub acceleration: f32,
-    pub deceleration: f32,
+    pub acceleration_forward: f32,
+    pub acceleration_backward: f32,
+    pub acceleration_right: f32,
+    pub acceleration_left: f32,
+    pub acceleration_up: f32,
+    pub acceleration_down: f32,
+    pub roll_speed: f32,
+    pub mouse_sensitivity: f32,
+    pub initial_pitch: f32,
+}
+
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ShipStatModifiers {
+    pub center_of_mass_offset: Vec3,
+    pub max_speed_multiplier: f32,
+    pub acceleration_forward_multiplier: f32,
+    pub acceleration_backward_multiplier: f32,
+    pub acceleration_right_multiplier: f32,
+    pub acceleration_left_multiplier: f32,
+    pub acceleration_up_multiplier: f32,
+    pub acceleration_down_multiplier: f32,
+    pub roll_speed_multiplier: f32,
+    pub mouse_sensitivity_multiplier: f32,
+}
+
+impl Default for ShipStatModifiers {
+    fn default() -> Self {
+        Self {
+            center_of_mass_offset: Vec3::ZERO,
+            max_speed_multiplier: 1.0,
+            acceleration_forward_multiplier: 1.0,
+            acceleration_backward_multiplier: 1.0,
+            acceleration_right_multiplier: 1.0,
+            acceleration_left_multiplier: 1.0,
+            acceleration_up_multiplier: 1.0,
+            acceleration_down_multiplier: 1.0,
+            roll_speed_multiplier: 1.0,
+            mouse_sensitivity_multiplier: 1.0,
+        }
+    }
+}
+
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ShipDerivedStats {
+    pub center_of_mass_local: Vec3,
+    pub max_speed: f32,
+    pub acceleration_forward: f32,
+    pub acceleration_backward: f32,
+    pub acceleration_right: f32,
+    pub acceleration_left: f32,
+    pub acceleration_up: f32,
+    pub acceleration_down: f32,
     pub roll_speed: f32,
     pub mouse_sensitivity: f32,
     pub initial_pitch: f32,
@@ -31,45 +88,11 @@ pub struct ShipMovementState {
 #[derive(Component)]
 pub struct PlayerShip;
 
-impl ShipType {
-    pub fn stats(self) -> ShipStats {
-        match self {
-            ShipType::Starter => ShipStats {
-                center_of_mass_local: Vec3::new(0.0, 0.0, 0.0),
-                max_speed: 10.0,
-                acceleration: 24.0,
-                deceleration: 16.0,
-                roll_speed: 1.8,
-                mouse_sensitivity: 0.006,
-                initial_pitch: -0.22,
-            },
-            ShipType::Interceptor => ShipStats {
-                center_of_mass_local: Vec3::new(0.0, 0.0, -0.15),
-                max_speed: 16.0,
-                acceleration: 38.0,
-                deceleration: 22.0,
-                roll_speed: 2.8,
-                mouse_sensitivity: 0.007,
-                initial_pitch: -0.22,
-            },
-            ShipType::Hauler => ShipStats {
-                center_of_mass_local: Vec3::new(0.0, -0.05, 0.25),
-                max_speed: 7.0,
-                acceleration: 12.0,
-                deceleration: 9.0,
-                roll_speed: 1.0,
-                mouse_sensitivity: 0.004,
-                initial_pitch: -0.22,
-            },
-        }
-    }
-}
-
 pub fn spawn_player_ship(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
-    ship_type: ShipType,
+    config_store: &ShipConfigStore,
 ) -> Entity {
     let ship_mesh = meshes.add(create_multicolor_prism(Vec3::new(1.8, 0.5, 3.2)));
     let ship_material = materials.add(StandardMaterial {
@@ -78,7 +101,22 @@ pub fn spawn_player_ship(
         ..default()
     });
 
-    let stats = ship_type.stats();
+    let config = config_store.get_default();
+    let base_stats = ShipBaseStats {
+        center_of_mass_local: Vec3::from_array(config.center_of_mass_local),
+        max_speed: config.max_speed,
+        acceleration_forward: config.acceleration_forward,
+        acceleration_backward: config.acceleration_backward,
+        acceleration_right: config.acceleration_right,
+        acceleration_left: config.acceleration_left,
+        acceleration_up: config.acceleration_up,
+        acceleration_down: config.acceleration_down,
+        roll_speed: config.roll_speed,
+        mouse_sensitivity: config.mouse_sensitivity,
+        initial_pitch: config.initial_pitch,
+    };
+    let modifiers = ShipStatModifiers::default();
+    let derived = compose_derived_stats(base_stats, modifiers);
 
     commands
         .spawn((
@@ -86,14 +124,71 @@ pub fn spawn_player_ship(
             MeshMaterial3d(ship_material),
             Transform::from_xyz(0.0, -0.4, 0.0),
             PlayerShip,
-            ship_type,
-            stats,
+            ShipIdentity {
+                display_name: config.display_name,
+            },
+            base_stats,
+            modifiers,
+            derived,
             ShipMovementState {
                 velocity: Vec3::ZERO,
-                pitch_angle: stats.initial_pitch,
+                pitch_angle: derived.initial_pitch,
             },
         ))
         .id()
+}
+
+fn compose_derived_stats(base: ShipBaseStats, modifiers: ShipStatModifiers) -> ShipDerivedStats {
+    ShipDerivedStats {
+        center_of_mass_local: base.center_of_mass_local + modifiers.center_of_mass_offset,
+        max_speed: (base.max_speed * modifiers.max_speed_multiplier).max(0.0),
+        acceleration_forward: (base.acceleration_forward * modifiers.acceleration_forward_multiplier).max(0.0),
+        acceleration_backward: (base.acceleration_backward * modifiers.acceleration_backward_multiplier).max(0.0),
+        acceleration_right: (base.acceleration_right * modifiers.acceleration_right_multiplier).max(0.0),
+        acceleration_left: (base.acceleration_left * modifiers.acceleration_left_multiplier).max(0.0),
+        acceleration_up: (base.acceleration_up * modifiers.acceleration_up_multiplier).max(0.0),
+        acceleration_down: (base.acceleration_down * modifiers.acceleration_down_multiplier).max(0.0),
+        roll_speed: base.roll_speed * modifiers.roll_speed_multiplier,
+        mouse_sensitivity: base.mouse_sensitivity * modifiers.mouse_sensitivity_multiplier,
+        initial_pitch: base.initial_pitch,
+    }
+}
+
+fn recompute_derived_stats_system(
+    mut ship_query: Query<
+        (&ShipBaseStats, &ShipStatModifiers, &mut ShipDerivedStats),
+        Or<(Changed<ShipBaseStats>, Changed<ShipStatModifiers>)>,
+    >,
+) {
+    for (base, modifiers, mut derived) in &mut ship_query {
+        *derived = compose_derived_stats(*base, *modifiers);
+    }
+}
+
+fn ship_modifier_debug_input_system(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut ship_query: Query<&mut ShipStatModifiers, With<PlayerShip>>,
+) {
+    let Ok(mut modifiers) = ship_query.get_single_mut() else {
+        return;
+    };
+
+    if keyboard.just_pressed(KeyCode::BracketRight) {
+        modifiers.acceleration_forward_multiplier += 0.1;
+        modifiers.acceleration_backward_multiplier += 0.1;
+        modifiers.acceleration_right_multiplier += 0.1;
+        modifiers.acceleration_left_multiplier += 0.1;
+        modifiers.acceleration_up_multiplier += 0.1;
+        modifiers.acceleration_down_multiplier += 0.1;
+    }
+    if keyboard.just_pressed(KeyCode::BracketLeft) {
+        modifiers.acceleration_forward_multiplier = (modifiers.acceleration_forward_multiplier - 0.1).max(0.1);
+        modifiers.acceleration_backward_multiplier = (modifiers.acceleration_backward_multiplier - 0.1).max(0.1);
+        modifiers.acceleration_right_multiplier = (modifiers.acceleration_right_multiplier - 0.1).max(0.1);
+        modifiers.acceleration_left_multiplier = (modifiers.acceleration_left_multiplier - 0.1).max(0.1);
+        modifiers.acceleration_up_multiplier = (modifiers.acceleration_up_multiplier - 0.1).max(0.1);
+        modifiers.acceleration_down_multiplier = (modifiers.acceleration_down_multiplier - 0.1).max(0.1);
+    }
 }
 
 fn create_multicolor_prism(size: Vec3) -> Mesh {

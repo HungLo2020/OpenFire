@@ -1,7 +1,7 @@
 use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 use bevy::app::AppExit;
-use crate::ship::{PlayerShip, ShipMovementState, ShipStats};
+use crate::ship::{PlayerShip, ShipDerivedStats, ShipMovementState};
 
 pub struct MovementControllerPlugin;
 
@@ -22,7 +22,7 @@ impl Plugin for MovementControllerPlugin {
 fn ship_movement_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    mut ship_query: Query<(&ShipStats, &mut ShipMovementState, &mut Transform), With<PlayerShip>>,
+    mut ship_query: Query<(&ShipDerivedStats, &mut ShipMovementState, &mut Transform), With<PlayerShip>>,
 ) {
     let Ok((stats, mut movement_state, mut transform)) = ship_query.get_single_mut() else {
         return;
@@ -58,22 +58,58 @@ fn ship_movement_system(
     let right = transform.rotation.mul_vec3(Vec3::X);
     let up = transform.rotation.mul_vec3(Vec3::Y);
 
-    let mut direction = forward * forward_axis + right * right_axis + up * up_axis;
-    if direction.length_squared() > 0.0 {
-        direction = direction.normalize();
-        movement_state.velocity += direction * stats.acceleration * dt;
-    } else {
-        let speed = movement_state.velocity.length();
-        if speed > 0.0 {
-            let decel_step = stats.deceleration * dt;
-            if decel_step >= speed {
-                movement_state.velocity = Vec3::ZERO;
-            } else {
-                let velocity_direction = movement_state.velocity.normalize();
-                movement_state.velocity -= velocity_direction * decel_step;
-            }
-        }
+    let mut local_velocity = Vec3::new(
+        movement_state.velocity.dot(right),
+        movement_state.velocity.dot(up),
+        movement_state.velocity.dot(forward),
+    );
+
+    if forward_axis > 0.0 {
+        local_velocity.z += stats.acceleration_forward * dt;
+    } else if forward_axis < 0.0 {
+        local_velocity.z -= stats.acceleration_backward * dt;
     }
+
+    if right_axis > 0.0 {
+        local_velocity.x += stats.acceleration_right * dt;
+    } else if right_axis < 0.0 {
+        local_velocity.x -= stats.acceleration_left * dt;
+    }
+
+    if up_axis > 0.0 {
+        local_velocity.y += stats.acceleration_up * dt;
+    } else if up_axis < 0.0 {
+        local_velocity.y -= stats.acceleration_down * dt;
+    }
+
+    if forward_axis == 0.0 {
+        let decel = if local_velocity.z > 0.0 {
+            stats.acceleration_backward * 0.5
+        } else {
+            stats.acceleration_forward * 0.5
+        };
+        local_velocity.z = approach_zero(local_velocity.z, decel * dt);
+    }
+
+    if right_axis == 0.0 {
+        let decel = if local_velocity.x > 0.0 {
+            stats.acceleration_left * 0.5
+        } else {
+            stats.acceleration_right * 0.5
+        };
+        local_velocity.x = approach_zero(local_velocity.x, decel * dt);
+    }
+
+    if up_axis == 0.0 {
+        let decel = if local_velocity.y > 0.0 {
+            stats.acceleration_down * 0.5
+        } else {
+            stats.acceleration_up * 0.5
+        };
+        local_velocity.y = approach_zero(local_velocity.y, decel * dt);
+    }
+
+    movement_state.velocity = right * local_velocity.x + up * local_velocity.y + forward * local_velocity.z;
 
     let speed = movement_state.velocity.length();
     if speed > stats.max_speed {
@@ -86,7 +122,7 @@ fn ship_movement_system(
 fn ship_rotation_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    mut ship_query: Query<(&ShipStats, &mut Transform), With<PlayerShip>>,
+    mut ship_query: Query<(&ShipDerivedStats, &mut Transform), With<PlayerShip>>,
 ) {
     let Ok((stats, mut transform)) = ship_query.get_single_mut() else {
         return;
@@ -109,7 +145,7 @@ fn ship_rotation_system(
 fn mouse_look_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut mouse_motion_events: EventReader<MouseMotion>,
-    mut ship_query: Query<(&ShipStats, &mut ShipMovementState, &mut Transform), With<PlayerShip>>,
+    mut ship_query: Query<(&ShipDerivedStats, &mut ShipMovementState, &mut Transform), With<PlayerShip>>,
 ) {
     if keyboard.pressed(KeyCode::AltLeft) {
         return;
@@ -142,6 +178,16 @@ fn rotate_around_center_of_mass(transform: &mut Transform, center_of_mass_local:
     let world_com = transform.translation + transform.rotation.mul_vec3(center_of_mass_local);
     transform.rotation *= local_delta;
     transform.translation = world_com - transform.rotation.mul_vec3(center_of_mass_local);
+}
+
+fn approach_zero(value: f32, max_step: f32) -> f32 {
+    if value > 0.0 {
+        (value - max_step).max(0.0)
+    } else if value < 0.0 {
+        (value + max_step).min(0.0)
+    } else {
+        0.0
+    }
 }
 
 fn exit_on_esc_system(
