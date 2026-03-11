@@ -19,8 +19,6 @@ pub struct ShipStats {
     pub deceleration: f32,
     pub roll_speed: f32,
     pub mouse_sensitivity: f32,
-    pub pitch_min: f32,
-    pub pitch_max: f32,
     pub initial_pitch: f32,
 }
 
@@ -43,8 +41,6 @@ impl ShipType {
                 deceleration: 16.0,
                 roll_speed: 1.8,
                 mouse_sensitivity: 0.006,
-                pitch_min: -1.2,
-                pitch_max: 1.2,
                 initial_pitch: -0.22,
             },
             ShipType::Interceptor => ShipStats {
@@ -54,8 +50,6 @@ impl ShipType {
                 deceleration: 22.0,
                 roll_speed: 2.8,
                 mouse_sensitivity: 0.007,
-                pitch_min: -1.2,
-                pitch_max: 1.2,
                 initial_pitch: -0.22,
             },
             ShipType::Hauler => ShipStats {
@@ -65,8 +59,6 @@ impl ShipType {
                 deceleration: 9.0,
                 roll_speed: 1.0,
                 mouse_sensitivity: 0.004,
-                pitch_min: -1.0,
-                pitch_max: 1.0,
                 initial_pitch: -0.22,
             },
         }

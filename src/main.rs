@@ -3,7 +3,7 @@ mod ship;
 mod camera_rig;
 
 use bevy::prelude::*;
-use bevy::window::{CursorGrabMode, PrimaryWindow};
+use bevy::window::{CursorGrabMode, PrimaryWindow, WindowFocused};
 use camera_rig::{spawn_follow_camera, CameraRigPlugin};
 use movement_controller::MovementControllerPlugin;
 use ship::{spawn_player_ship, PlayerShip, ShipStats, ShipType};
@@ -15,7 +15,7 @@ fn main() {
         .add_plugins(MovementControllerPlugin)
         .add_plugins(CameraRigPlugin)
         .add_systems(Startup, setup)
-        .add_systems(Update, update_projected_crosshair)
+        .add_systems(Update, (update_projected_crosshair, recapture_mouse_on_focus))
         .run();
 }
 
@@ -158,4 +158,23 @@ fn spawn_starfield(
 
 fn hash_01(seed: f32) -> f32 {
     (seed.sin() * 43_758.547).rem_euclid(1.0)
+}
+
+fn recapture_mouse_on_focus(
+    mut focus_events: EventReader<WindowFocused>,
+    mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
+) {
+    let mut regained_focus = false;
+    for event in focus_events.read() {
+        if event.focused {
+            regained_focus = true;
+        }
+    }
+
+    if regained_focus {
+        if let Ok(mut window) = primary_window.get_single_mut() {
+            window.cursor_options.visible = false;
+            window.cursor_options.grab_mode = CursorGrabMode::Locked;
+        }
+    }
 }

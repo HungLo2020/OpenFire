@@ -131,8 +131,7 @@ fn mouse_look_system(
     let yaw_delta = Quat::from_rotation_y(-delta.x * stats.mouse_sensitivity);
     rotate_around_center_of_mass(&mut ship_transform, stats.center_of_mass_local, yaw_delta);
 
-    let next_pitch = (movement_state.pitch_angle - delta.y * stats.mouse_sensitivity)
-        .clamp(stats.pitch_min, stats.pitch_max);
+    let next_pitch = movement_state.pitch_angle - delta.y * stats.mouse_sensitivity;
     let delta_pitch = next_pitch - movement_state.pitch_angle;
     movement_state.pitch_angle = next_pitch;
     let pitch_delta = Quat::from_rotation_x(delta_pitch);
