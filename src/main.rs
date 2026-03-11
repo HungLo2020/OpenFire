@@ -4,6 +4,7 @@ mod camera_rig;
 mod ship_config_store;
 
 use bevy::prelude::*;
+use bevy::transform::TransformSystem;
 use bevy::window::{CursorGrabMode, PrimaryWindow, WindowFocused};
 use camera_rig::{spawn_follow_camera, CameraRigPlugin};
 use movement_controller::MovementControllerPlugin;
@@ -19,7 +20,11 @@ fn main() {
         .add_plugins(MovementControllerPlugin)
         .add_plugins(CameraRigPlugin)
         .add_systems(Startup, setup)
-        .add_systems(Update, (update_projected_crosshair, recapture_mouse_on_focus))
+        .add_systems(Update, recapture_mouse_on_focus)
+        .add_systems(
+            PostUpdate,
+            update_projected_crosshair.after(TransformSystem::TransformPropagate),
+        )
         .run();
 }
 
@@ -125,8 +130,8 @@ fn update_projected_crosshair(
     let clamped_x = screen_position.x.clamp(padding, width - padding);
     let clamped_y = screen_position.y.clamp(padding, height - padding);
 
-    crosshair_node.left = Val::Px(clamped_x - 8.0);
-    crosshair_node.top = Val::Px(clamped_y - 14.0);
+    crosshair_node.left = Val::Px((clamped_x - 8.0).round());
+    crosshair_node.top = Val::Px((clamped_y - 14.0).round());
 }
 
 fn spawn_starfield(
