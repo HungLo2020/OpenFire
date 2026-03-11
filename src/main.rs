@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 use camera_rig::{spawn_follow_camera, CameraRigPlugin};
 use movement_controller::MovementControllerPlugin;
-use ship::{spawn_player_ship, ShipType};
+use ship::{spawn_player_ship, PlayerShip, ShipStats, ShipType};
 
 fn main() {
     App::new()
@@ -15,8 +15,12 @@ fn main() {
         .add_plugins(MovementControllerPlugin)
         .add_plugins(CameraRigPlugin)
         .add_systems(Startup, setup)
+        .add_systems(Update, update_projected_crosshair)
         .run();
 }
+
+    #[derive(Component)]
+    struct ProjectedCrosshair;
 
 fn setup(
     mut commands: Commands,
@@ -65,22 +69,59 @@ fn setup(
 
     spawn_follow_camera(&mut commands, ship_entity);
 
-    commands
-        .spawn(Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            top: Val::Px(0.0),
             ..default()
-        })
-        .with_child((
-            Text::new("+"),
-            TextFont {
-                font_size: 30.0,
-                ..default()
-            },
-            TextColor(Color::WHITE),
-        ));
+        },
+        Text::new("+"),
+        TextFont {
+            font_size: 30.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        ProjectedCrosshair,
+    ));
+}
+
+fn update_projected_crosshair(
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    ship_query: Query<(&GlobalTransform, &ShipStats), With<PlayerShip>>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    mut crosshair_query: Query<&mut Node, With<ProjectedCrosshair>>,
+) {
+    let Ok(window) = window_query.get_single() else {
+        return;
+    };
+    let Ok((ship_transform, ship_stats)) = ship_query.get_single() else {
+        return;
+    };
+    let Ok((camera, camera_transform)) = camera_query.get_single() else {
+        return;
+    };
+    let Ok(mut crosshair_node) = crosshair_query.get_single_mut() else {
+        return;
+    };
+
+    let (_, ship_rotation, ship_translation) = ship_transform.to_scale_rotation_translation();
+    let center_of_mass_world = ship_translation + ship_rotation.mul_vec3(ship_stats.center_of_mass_local);
+    let ship_forward = ship_rotation * -Vec3::Z;
+    let projected_target = center_of_mass_world + ship_forward * 10_000.0;
+
+    let Ok(screen_position) = camera.world_to_viewport(camera_transform, projected_target) else {
+        return;
+    };
+
+    let width = window.width();
+    let height = window.height();
+    let padding = 16.0;
+    let clamped_x = screen_position.x.clamp(padding, width - padding);
+    let clamped_y = screen_position.y.clamp(padding, height - padding);
+
+    crosshair_node.left = Val::Px(clamped_x - 8.0);
+    crosshair_node.top = Val::Px(clamped_y - 14.0);
 }
 
 fn spawn_starfield(

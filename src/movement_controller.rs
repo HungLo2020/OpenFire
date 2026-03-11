@@ -101,7 +101,8 @@ fn ship_rotation_system(
     }
 
     if roll_input != 0.0 {
-        transform.rotate_local_z(roll_input * stats.roll_speed * time.delta_secs());
+        let delta_rotation = Quat::from_rotation_z(roll_input * stats.roll_speed * time.delta_secs());
+        rotate_around_center_of_mass(&mut transform, stats.center_of_mass_local, delta_rotation);
     }
 }
 
@@ -127,13 +128,21 @@ fn mouse_look_system(
         return;
     };
 
-    ship_transform.rotate_y(-delta.x * stats.mouse_sensitivity);
+    let yaw_delta = Quat::from_rotation_y(-delta.x * stats.mouse_sensitivity);
+    rotate_around_center_of_mass(&mut ship_transform, stats.center_of_mass_local, yaw_delta);
 
     let next_pitch = (movement_state.pitch_angle - delta.y * stats.mouse_sensitivity)
         .clamp(stats.pitch_min, stats.pitch_max);
     let delta_pitch = next_pitch - movement_state.pitch_angle;
     movement_state.pitch_angle = next_pitch;
-    ship_transform.rotate_local_x(delta_pitch);
+    let pitch_delta = Quat::from_rotation_x(delta_pitch);
+    rotate_around_center_of_mass(&mut ship_transform, stats.center_of_mass_local, pitch_delta);
+}
+
+fn rotate_around_center_of_mass(transform: &mut Transform, center_of_mass_local: Vec3, local_delta: Quat) {
+    let world_com = transform.translation + transform.rotation.mul_vec3(center_of_mass_local);
+    transform.rotation *= local_delta;
+    transform.translation = world_com - transform.rotation.mul_vec3(center_of_mass_local);
 }
 
 fn exit_on_esc_system(

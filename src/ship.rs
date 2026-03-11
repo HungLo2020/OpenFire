@@ -13,6 +13,7 @@ pub enum ShipType {
 
 #[derive(Component, Clone, Copy, Debug)]
 pub struct ShipStats {
+    pub center_of_mass_local: Vec3,
     pub max_speed: f32,
     pub acceleration: f32,
     pub deceleration: f32,
@@ -36,6 +37,7 @@ impl ShipType {
     pub fn stats(self) -> ShipStats {
         match self {
             ShipType::Starter => ShipStats {
+                center_of_mass_local: Vec3::new(0.0, 0.0, 0.0),
                 max_speed: 10.0,
                 acceleration: 24.0,
                 deceleration: 16.0,
@@ -46,6 +48,7 @@ impl ShipType {
                 initial_pitch: -0.22,
             },
             ShipType::Interceptor => ShipStats {
+                center_of_mass_local: Vec3::new(0.0, 0.0, -0.15),
                 max_speed: 16.0,
                 acceleration: 38.0,
                 deceleration: 22.0,
@@ -56,6 +59,7 @@ impl ShipType {
                 initial_pitch: -0.22,
             },
             ShipType::Hauler => ShipStats {
+                center_of_mass_local: Vec3::new(0.0, -0.05, 0.25),
                 max_speed: 7.0,
                 acceleration: 12.0,
                 deceleration: 9.0,
