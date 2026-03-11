@@ -1,6 +1,7 @@
 use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 use bevy::app::AppExit;
+use crate::ship::{PlayerShip, ShipMovementState, ShipStats};
 
 pub struct MovementControllerPlugin;
 
@@ -18,25 +19,12 @@ impl Plugin for MovementControllerPlugin {
     }
 }
 
-#[derive(Component)]
-pub struct ShipController {
-    pub max_speed: f32,
-    pub acceleration: f32,
-    pub deceleration: f32,
-    pub velocity: Vec3,
-    pub roll_speed: f32,
-    pub mouse_sensitivity: f32,
-    pub pitch_angle: f32,
-    pub pitch_min: f32,
-    pub pitch_max: f32,
-}
-
 fn ship_movement_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    mut ship_query: Query<(&mut ShipController, &mut Transform)>,
+    mut ship_query: Query<(&ShipStats, &mut ShipMovementState, &mut Transform), With<PlayerShip>>,
 ) {
-    let Ok((mut controller, mut transform)) = ship_query.get_single_mut() else {
+    let Ok((stats, mut movement_state, mut transform)) = ship_query.get_single_mut() else {
         return;
     };
 
@@ -73,35 +61,34 @@ fn ship_movement_system(
     let mut direction = forward * forward_axis + right * right_axis + up * up_axis;
     if direction.length_squared() > 0.0 {
         direction = direction.normalize();
-        let acceleration = controller.acceleration;
-        controller.velocity += direction * acceleration * dt;
+        movement_state.velocity += direction * stats.acceleration * dt;
     } else {
-        let speed = controller.velocity.length();
+        let speed = movement_state.velocity.length();
         if speed > 0.0 {
-            let decel_step = controller.deceleration * dt;
+            let decel_step = stats.deceleration * dt;
             if decel_step >= speed {
-                controller.velocity = Vec3::ZERO;
+                movement_state.velocity = Vec3::ZERO;
             } else {
-                let velocity_direction = controller.velocity.normalize();
-                controller.velocity -= velocity_direction * decel_step;
+                let velocity_direction = movement_state.velocity.normalize();
+                movement_state.velocity -= velocity_direction * decel_step;
             }
         }
     }
 
-    let speed = controller.velocity.length();
-    if speed > controller.max_speed {
-        controller.velocity = controller.velocity.normalize() * controller.max_speed;
+    let speed = movement_state.velocity.length();
+    if speed > stats.max_speed {
+        movement_state.velocity = movement_state.velocity.normalize() * stats.max_speed;
     }
 
-    transform.translation += controller.velocity * dt;
+    transform.translation += movement_state.velocity * dt;
 }
 
 fn ship_rotation_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    mut ship_query: Query<(&ShipController, &mut Transform)>,
+    mut ship_query: Query<(&ShipStats, &mut Transform), With<PlayerShip>>,
 ) {
-    let Ok((controller, mut transform)) = ship_query.get_single_mut() else {
+    let Ok((stats, mut transform)) = ship_query.get_single_mut() else {
         return;
     };
 
@@ -114,14 +101,19 @@ fn ship_rotation_system(
     }
 
     if roll_input != 0.0 {
-        transform.rotate_local_z(roll_input * controller.roll_speed * time.delta_secs());
+        transform.rotate_local_z(roll_input * stats.roll_speed * time.delta_secs());
     }
 }
 
 fn mouse_look_system(
+    keyboard: Res<ButtonInput<KeyCode>>,
     mut mouse_motion_events: EventReader<MouseMotion>,
-    mut ship_query: Query<(&mut ShipController, &mut Transform)>,
+    mut ship_query: Query<(&ShipStats, &mut ShipMovementState, &mut Transform), With<PlayerShip>>,
 ) {
+    if keyboard.pressed(KeyCode::AltLeft) {
+        return;
+    }
+
     let mut delta = Vec2::ZERO;
     for event in mouse_motion_events.read() {
         delta += event.delta;
@@ -131,16 +123,16 @@ fn mouse_look_system(
         return;
     }
 
-    let Ok((mut controller, mut ship_transform)) = ship_query.get_single_mut() else {
+    let Ok((stats, mut movement_state, mut ship_transform)) = ship_query.get_single_mut() else {
         return;
     };
 
-    ship_transform.rotate_y(-delta.x * controller.mouse_sensitivity);
+    ship_transform.rotate_y(-delta.x * stats.mouse_sensitivity);
 
-    let next_pitch = (controller.pitch_angle - delta.y * controller.mouse_sensitivity)
-        .clamp(controller.pitch_min, controller.pitch_max);
-    let delta_pitch = next_pitch - controller.pitch_angle;
-    controller.pitch_angle = next_pitch;
+    let next_pitch = (movement_state.pitch_angle - delta.y * stats.mouse_sensitivity)
+        .clamp(stats.pitch_min, stats.pitch_max);
+    let delta_pitch = next_pitch - movement_state.pitch_angle;
+    movement_state.pitch_angle = next_pitch;
     ship_transform.rotate_local_x(delta_pitch);
 }
 
