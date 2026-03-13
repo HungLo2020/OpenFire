@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::Indices;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::PrimitiveTopology;
+use crate::collision::CollisionBox;
 use crate::ship_config_store::ShipConfigStore;
 
 pub struct ShipStatsPlugin;
@@ -123,6 +124,9 @@ pub fn spawn_player_ship(
             Mesh3d(ship_mesh),
             MeshMaterial3d(ship_material),
             Transform::from_xyz(0.0, -0.4, 0.0),
+            CollisionBox {
+                half_extents: Vec3::new(0.9, 0.25, 1.6),
+            },
             PlayerShip,
             ShipIdentity {
                 display_name: config.display_name,

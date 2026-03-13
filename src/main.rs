@@ -1,4 +1,5 @@
 mod camera_rig;
+mod collision;
 mod game_state;
 mod movement_controller;
 mod ship;
@@ -9,6 +10,7 @@ use bevy::app::AppExit;
 use bevy::transform::TransformSystem;
 use bevy::window::{CursorGrabMode, PrimaryWindow, WindowFocused};
 use camera_rig::{spawn_follow_camera, CameraRigPlugin};
+use collision::{raycast_collision_boxes, CollisionBox};
 use game_state::GameScreen;
 use movement_controller::MovementControllerPlugin;
 use ship::{spawn_player_ship, PlayerShip, ShipDerivedStats, ShipStatsPlugin};
@@ -261,6 +263,9 @@ fn enter_in_game(
             Mesh3d(test_cube_mesh.clone()),
             MeshMaterial3d(material),
             Transform::from_translation(position),
+            CollisionBox {
+                half_extents: Vec3::splat(0.4),
+            },
         ));
     }
 
@@ -410,14 +415,15 @@ fn pause_menu_button_system(
 
 fn update_projected_crosshair(
     window_query: Query<&Window, With<PrimaryWindow>>,
-    ship_query: Query<(&GlobalTransform, &ShipDerivedStats), With<PlayerShip>>,
+    ship_query: Query<(Entity, &GlobalTransform, &ShipDerivedStats), With<PlayerShip>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    colliders_query: Query<(Entity, &CollisionBox, &GlobalTransform)>,
     mut crosshair_query: Query<&mut Node, With<ProjectedCrosshair>>,
 ) {
     let Ok(window) = window_query.get_single() else {
         return;
     };
-    let Ok((ship_transform, ship_stats)) = ship_query.get_single() else {
+    let Ok((ship_entity, ship_transform, ship_stats)) = ship_query.get_single() else {
         return;
     };
     let Ok((camera, camera_transform)) = camera_query.get_single() else {
@@ -430,7 +436,16 @@ fn update_projected_crosshair(
     let (_, ship_rotation, ship_translation) = ship_transform.to_scale_rotation_translation();
     let center_of_mass_world = ship_translation + ship_rotation.mul_vec3(ship_stats.center_of_mass_local);
     let ship_forward = ship_rotation * -Vec3::Z;
-    let projected_target = center_of_mass_world + ship_forward * 10_000.0;
+    let max_distance = 10_000.0;
+    let projected_target = raycast_collision_boxes(
+        center_of_mass_world,
+        ship_forward,
+        max_distance,
+        Some(ship_entity),
+        colliders_query.iter(),
+    )
+    .map(|hit| hit.world_position)
+    .unwrap_or(center_of_mass_world + ship_forward * max_distance);
 
     let Ok(screen_position) = camera.world_to_viewport(camera_transform, projected_target) else {
         return;
